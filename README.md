@@ -1,32 +1,42 @@
-# Towards tailored breast cancer screening: Assessing the added value of 313-polygenic risk score and breast density in a Dutch screening cohort
+# External validation of BOADICEA in the PRISMA screening cohort
 
-BOADICEA is a multifactorial breast cancer risk prediction model that incorporates established risk factors, including polygenic risk scores (PRS) and mammographic breast density (BD). While extensively validated in high-risk populations, its performance in screening cohorts remains unclear. This study evaluates the clinical validity of BOADICEA in a population-based screening cohort.
+This repository contains the R code used to describe the study population and externally validate BOADICEA version 7.3.2 in the PRISMA cohort.
 
-We validated BOADICEA (v7.3.2) in the PRISMA cohort (n=82,200 women in the Dutch screening program) using a nested case-control design, including 318 cases and 771 controls. Five-year risks were calculated based on sub-models including age, “clinical” risk factors (personal hormonal, lifestyle, and disease history, along with family history up to second-degree relatives), rare pathogenic variants (PVs), BD (Volpara-based continuous and categorical), and 313-PRS. Model performance was assessed using discrimination (C-index), calibration (observed/expected ratios, slope, calibration plots), risk reclassification (Net Reclassification Index, NRI), and decision analysis (Net Benefit, NB).
+PRISMA is a population-based cohort of approximately 82,200 women participating in the Dutch breast cancer screening program. The validation used a nested case-control sample comprising 318 women diagnosed with invasive breast cancer and 771 controls.
 
-# Syntax files
+Five-year breast cancer risks were estimated using models that progressively included:
+
+* Age
+* Established clinical and lifestyle risk factors, family history, and available pathogenic variant information
+* Volpara-based mammographic breast density
+* The 313-variant polygenic risk score
+* Combinations of breast density and the polygenic risk score
+
+Model performance was assessed using discrimination, calibration, risk reclassification, and decision curve analysis. The main decision context was the use of five-year risk estimates to inform consideration of risk-reducing medication.
+
+## Code / Syntax files
 | File                   | Description             |
 | :----                  | :----                   |
-| 05_External_validation.Rmd          | Validation of the BOADICEA model in the raw dataset.
-| 05_External_validation_imp.Rmd         | Validation of the BOADICEA model in an imputed dataset.
-| 05_External_validation_DCIShg.Rmd       | Validation of the BOADICEA model in the dataset including high grade DCIS as cases.
-| 05_External_validation_DCISall.Rmd     | Validation of the BOADICEA model in the dataset including all DCIS as cases.
-| 05_External_validation_subg_Age.Rmd    | Subgroup analysis by age.
-| 06_DCA_Simulation    | Additional analysis and simulations conducted for assessing utility for decisions on screening intervals.
-| perf_functions.R                       | Functions to calculate model performance.
+| `1_Descriptive tables.Rmd` | Prepares the analysis datasets and generates descriptive tables and distributions for participant characteristics, outcomes, breast density, the 313-variant polygenic risk score, and predicted BOADICEA risks. The selected analysis dataset can be changed to run the main or sensitivity analyses.                |
+| `2_Validation.Rmd`         | Evaluates five-year BOADICEA performance, including the C-index, observed-to-expected ratio, calibration slope, calibration plots, net reclassification improvement, and net benefit at clinically relevant risk thresholds. The selected analysis dataset can be changed to run the main or sensitivity analyses.                |
 
-# Contact
+## Data availability
+
+The individual-level PRISMA data, cleaning, and intermediate R workspaces are not included because they contain restricted research data.
+
+## Contact
+
 Mary Ann E. Binuya <br/>
 Netherlands Cancer Institute <br/>
 [m.binuya@nki.nl](m.binuya@nki.nl)
 
-# Authors
-| Author                 | Role   | Description             |
-| :----                  | :----: | :----                   |
-| Mary Ann Binuya   | Author | Development and support |
-| Renée Verdiesen  | Author | Development and review   |
-| Jim Peters    | Author | Development and review  |
-| Maartje Schreurs  | Author | Review   |
-| Danielle van der Waal  | Author | Review   |
-| Marjanka Schmidt  | Author | Review   |
-| Mireille Broeders  | Author | Review  |
+
+## Co-authors
+
+* Mary Ann E. Binuya
+* Jim Peters
+* Renée Verdiesen
+* Maartje Schreurs
+* Daniëlle van der Waal
+* Marjanka K. Schmidt
+* Mireille J.M. Broeders
