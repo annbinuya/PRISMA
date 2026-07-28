@@ -1,8 +1,9 @@
-#author: Mary Ann Binuya
-#last update: October 11, 2023
+# Author: Mary Ann Binuya
+# Last update: June 24, 2026
 
-# Functions from code from by Rentroia-Pacheco et al., 2024:
-# https://github.com/emc-dermatology/ncc-evaluation/blob/main/Auxilliary%20Scripts/2023_03_03%20Weighted%20performance%20metrics%20functions.R
+# References:
+## Rentroia-Pacheco et al., 2024: https://github.com/emc-dermatology/ncc-evaluation/blob/main/Auxilliary%20Scripts/2023_03_03%20Weighted%20performance%20metrics%20functions.R
+## Vickers and Elkin, 2006: https://pubmed.ncbi.nlm.nih.gov/17099194/
 
 ## Function to truncate until time "tp"
 truncateFUP <- function(outcome_FUP, outcome_num, tp) {
@@ -40,17 +41,17 @@ computeDiscMetrics <- function(outcome_FUP, outcome_num, predictions, cutoff, tp
   # Obtain labels for the desired cutoff:
   labels_cutoff <- ifelse(predictions > cutoff, 1, 0)
   
-  # # Weights are all equal if they are not specified:
-  # if (is.null(weights)) {
-  #   weights <- rep(1, length(predictions))
-  # }
+  # Use equal weights if no weights are provided
+  if (is.null(weights)) {
+   weights <- rep(1, length(predictions))
+  }
   
   # Compute survival probabilities for low-risk and high-risk groups:
-  low_risk_surv <- summary(survfit(Surv(outcome_FUP[labels_cutoff == 0], outcome_num[labels_cutoff == 0]) ~ 1, weights = weights[labels_cutoff == 0]), time = tp)$surv
-  high_risk_surv <- summary(survfit(Surv(outcome_FUP[labels_cutoff == 1], outcome_num[labels_cutoff == 1]) ~ 1, weights = weights[labels_cutoff == 1]), time = tp)$surv
+  low_risk_surv <- summary(survfit(Surv(outcome_FUP[labels_cutoff == 0], outcome_num[labels_cutoff == 0]) ~ 1, weights = weights[labels_cutoff == 0]), times = tp, extend = TRUE)$surv
+  high_risk_surv <- summary(survfit(Surv(outcome_FUP[labels_cutoff == 1], outcome_num[labels_cutoff == 1]) ~ 1, weights = weights[labels_cutoff == 1]), times = tp, extend = TRUE)$surv
   high_risk_n <- sum(ifelse(labels_cutoff == 1, weights, 0))
   low_risk_n <- sum(ifelse(labels_cutoff == 0, weights, 0))
-  overall_surv <- summary(survfit(Surv(outcome_FUP, outcome_num) ~ 1, weights = weights), time = tp)$surv
+  overall_surv <- summary(survfit(Surv(outcome_FUP, outcome_num) ~ 1, weights = weights), times = tp, extend = TRUE)$surv
   
   # Calculate True Negatives (TN), True Positives (TP), False Negatives (FN), and False Positives (FP):
   TN <- low_risk_surv * low_risk_n
@@ -74,7 +75,7 @@ computeDiscMetrics <- function(outcome_FUP, outcome_num, predictions, cutoff, tp
   # Compute Negative Predictive Value (NPV):
   NPV <- TN / (TN + FN) #alternatively, NPV <- low_risk_surv
   
-  # Compute Number Needed to Screen (NNS):
+  # Compute Number Needed to Screen (NNS); NN to select to identify one TP event by tp
   Risk_unscreened <- (TP + FN) / sum(weights) # Weighted approximation of the baseline risk or prevalence.
   Risk_screened <- FN / sum(weights) # Weighted risk among those identified as low risk (missed cases).
   ARR <- Risk_unscreened - Risk_screened
@@ -104,7 +105,7 @@ computeOEratio <- function(outcome_FUP, outcome_num, predictions, tp, weights = 
 }
 
 ## Function to calculate calibration slope
-computeSlope_wrong <- function(outcome_FUP, outcome_num, predictions, tp = NULL, weights = NULL) {
+computeSlope_loglog <- function(outcome_FUP, outcome_num, predictions, tp = NULL, weights = NULL) {
   # Truncate outcome at timepoint tp (if provided)
   if (!is.null(tp)) {
     truncated_survival <- truncateFUP(outcome_FUP, outcome_num, tp)
@@ -121,10 +122,10 @@ computeSlope_wrong <- function(outcome_FUP, outcome_num, predictions, tp = NULL,
   
   return(cal_slope)
 }
-#The slope for above represents beta in beta*(log(H0(t)+PI).
-#The baseline hazard is already accounted for in log-log transformation.
+# For Cox-based absolute risk predictions: log(-log(1 - p_i(t))) = log(H0(t)) + LP_i.
+# Fitting coxph(... ~ log(-log(1 - p_i(t)))) estimates a Cox calibration slope for the prognostic index.
 
-#What we can do is plot both predicted and observed risks with or without log-log transformation, and approximate a slope using simple linear regression.
+## Alternative calibration slope using grouped observed risks (if absolute rather than log hazard scale is preferred)
 computeSlope <- function(outcome_FUP, outcome_num, predictions, tp = NULL, weights = NULL, num_groups = 10) {
   # Truncate outcome at timepoint tp (if provided)
   if (!is.null(tp)) {
@@ -139,15 +140,15 @@ computeSlope <- function(outcome_FUP, outcome_num, predictions, tp = NULL, weigh
   # Add a small jitter to predictions if breaks are not unique
   jittered_predictions <- jitter(dat$predictions, factor = 1e-5)
   
-  # Create groups (quintiles by default)
+  # Create groups (deciles by default)
   q <- cut(jittered_predictions, breaks = quantile(jittered_predictions, probs = seq(0, 1, length.out = num_groups + 1)), include.lowest = TRUE)
   dat$q_f <- factor(q, levels = levels(q), labels = paste0("q", 1:num_groups))
   
-  # Fit a Cox model to estimate survival probabilities for each group
+  # Fit a KM curve to estimate survival probabilities for each group
   obs <- survfit(Surv(outcome_FUP, outcome_num) ~ q_f, weights = weights, data = dat)
   obs_q <- summary(obs, times = tp, extend = TRUE)
   
-  # Split data by q5_f
+  # Split data by q_f
   split_data <- split(dat, dat$q_f)
   
   # Calculate weighted means for each group
@@ -167,11 +168,10 @@ computeSlope <- function(outcome_FUP, outcome_num, predictions, tp = NULL, weigh
 }
 
 computeNRI <- function(outcome_FUP, outcome_num, predictions_old, predictions_new, tp, weights = NULL) {
-  # Truncate outcome at timepoint tp (if provided)
-  if (!is.null(tp)) {
-    truncated_survival <- truncateFUP(outcome_FUP, outcome_num, tp)
-    outcome_FUP <- truncated_survival[["FUP"]]
-    outcome_num <- truncated_survival[["Status"]]
+  
+  # Use equal weights if no weights are provided
+  if (is.null(weights)) {
+    weights <- rep(1, length(predictions_old))
   }
   
   # Define risk categories
@@ -186,31 +186,67 @@ computeNRI <- function(outcome_FUP, outcome_num, predictions_old, predictions_ne
   old_risk_num <- as.numeric(old_risk_cat)
   new_risk_num <- as.numeric(new_risk_cat)
   
-  # Identify events (outcome = 1) and non-events (outcome = 0)
-  events <- outcome_num == 1
-  non_events <- outcome_num == 0
+  # Define event and non-event status at tp using original follow-up
+  events <- outcome_num == 1 & outcome_FUP <= tp
+  non_events <- outcome_FUP >= tp & !events
+  
+  # Estimate censoring survival G(t) = P(not censored before t)
+  censor_event <- as.numeric(outcome_num == 0)
+  
+  G_fit <- survival::survfit(
+    survival::Surv(outcome_FUP, censor_event) ~ 1,
+    weights = weights
+  )
+  
+  get_G <- function(times) {
+    if (length(times) == 0) return(numeric(0))
+    pmax(summary(G_fit, times = times, extend = TRUE)$surv, 1e-6)
+  }
+  
+  # IPCW weights
+  ipcw <- rep(NA_real_, length(outcome_FUP))
+  ipcw[events] <- 1 / get_G(outcome_FUP[events])
+  ipcw[non_events] <- 1 / get_G(rep(tp, sum(non_events)))
+  
+  weights_ipcw <- weights * ipcw
+  
+  # Define upward and downward movements
+  upward <- !is.na(old_risk_num) & !is.na(new_risk_num) & new_risk_num > old_risk_num
+  downward <- !is.na(old_risk_num) & !is.na(new_risk_num) & new_risk_num < old_risk_num
   
   # Count upward and downward movements for events
-  event_upward <- sum(weights[events & (new_risk_num > old_risk_num)])
-  event_downward <- sum(weights[events & (new_risk_num < old_risk_num)])
+  event_upward <- sum(weights_ipcw[events & upward], na.rm = TRUE)
+  event_downward <- sum(weights_ipcw[events & downward], na.rm = TRUE)
   
   # Count upward and downward movements for non-events
-  non_event_upward <- sum(weights[non_events & (new_risk_num > old_risk_num)])
-  non_event_downward <- sum(weights[non_events & (new_risk_num < old_risk_num)])
+  non_event_upward <- sum(weights_ipcw[non_events & upward], na.rm = TRUE)
+  non_event_downward <- sum(weights_ipcw[non_events & downward], na.rm = TRUE)
   
   # Compute total number of events and non-events
-  total_events <- sum(weights[events])
-  total_non_events <- sum(weights[non_events])
+  total_events <- sum(weights_ipcw[events], na.rm = TRUE)
+  total_non_events <- sum(weights_ipcw[non_events], na.rm = TRUE)
   
-  # Compute Net Reclassification Improvement (NRI) components
-  NRI_events <- ifelse(total_events > 0, (event_upward - event_downward) / total_events, 0)
-  NRI_non_events <- ifelse(total_non_events > 0, (non_event_downward - non_event_upward) / total_non_events, 0)
+  # Compute Net Reclassification Improvement components
+  NRI_events <- ifelse(
+    total_events > 0,
+    (event_upward - event_downward) / total_events,
+    NA_real_
+  )
+  
+  NRI_non_events <- ifelse(
+    total_non_events > 0,
+    (non_event_downward - non_event_upward) / total_non_events,
+    NA_real_
+  )
+  
   NRI <- NRI_events + NRI_non_events
   
   # Return results
-  nri_results <- c("NRI Events" = NRI_events, 
-                   "NRI Non-Events" = NRI_non_events, 
-                   "Overall NRI" = NRI)
+  nri_results <- c(
+    "NRI Events" = NRI_events,
+    "NRI Non-Events" = NRI_non_events,
+    "Overall NRI" = NRI
+  )
   
   return(nri_results)
 }
@@ -235,7 +271,7 @@ computeNB <- function(outcome_FUP, outcome_num, predictions, weights, tp, thresh
     # NB treat all
     m_all <- 1 - summary(survfit(Surv(outcome_FUP, outcome_num) ~ 1,
                          weights = weights, data = data),
-                         times = tp)$surv
+                         times = tp, extend = TRUE)$surv
     NB_all <- m_all - (1-m_all) * (pt/(1-pt))
     
     # NB using predicted risk ("predictions")
@@ -245,7 +281,7 @@ computeNB <- function(outcome_FUP, outcome_num, predictions, weights, tp, thresh
       surv <- try(
         summary(survfit(Surv(outcome_FUP, outcome_num) ~ 1,
                         weights = weights, data = data[data$predictions >= pt, ]),
-                        times = tp), silent = TRUE)
+                        times = tp, extend = TRUE), silent = TRUE)
       
       if (class(surv) == "try-error") {
         TP <- 0
@@ -282,7 +318,7 @@ calplot_smooth <- function(data, predicted_risk, tmax, main = '',
   
   df$x.ll <- log(-log(1 - df$x))
   
-  model <- cph(Surv(futime, bc) ~ rcs(x.ll), data = df, x = TRUE, y = TRUE, weights = wt, surv = TRUE) #optimal number of knots selected
+  model <- cph(Surv(futime, bc) ~ rcs(x.ll), data = df, x = TRUE, y = TRUE, weights = wt, surv = TRUE)
   
   # Observed risks
   xx <- seq(quantile(df$x, prob = 0.01), quantile(df$x, prob = 0.99), length = 100)
@@ -317,7 +353,7 @@ calplot_smooth <- function(data, predicted_risk, tmax, main = '',
     q <- Hmisc::cut2(df$x, levels.mean = TRUE, g = g) # group predicted risks
     means <- as.double(levels(q))
     y1 <- 1 - survest(model, newdata = df, times = tmax)$surv
-    prop <- tapply(y1, q, mean) # mean observed risks
+    prop <- tapply(y1, q, mean) # mean observed (fitted) risks
     points(means, prop, pch = 124, cex = 1, col = 'black') # add markers
   }
   
