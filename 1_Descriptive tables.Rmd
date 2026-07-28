@@ -1,0 +1,365 @@
+---
+title: "Descriptive"
+author: "Mary Ann Binuya"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+  pdf_document: default
+---
+
+# Aim
+1. To create Table 1's and check distribution of outcomes/covariates.
+
+# Set-up
+```{r setup, include=FALSE}
+library(dplyr)
+library(table1)
+library(survival)
+library(survminer)
+library(ggplot2)
+```
+
+# Load required datasets
+```{r load}
+load("WS_03_BOADICEA_output.RData")
+
+   dat_all <- dat_full %>%
+    mutate(predrisk_mod1 = BOA_5yrsrisk_Model1/100,
+            predrisk_mod2 = BOA_5yrsrisk_Model2/100,
+            predrisk_mod3a = BOA_5yrsrisk_Model3a/100,
+            predrisk_mod3b = BOA_5yrsrisk_Model3b/100,
+            predrisk_mod4 = BOA_5yrsrisk_Model4/100,
+            predrisk_mod5a = BOA_5yrsrisk_Model5a/100,
+            predrisk_mod5b = BOA_5yrsrisk_Model5b/100)
+  
+  rm(list=setdiff(ls(), c("dat_all")))
+  
+  nrow(dat_all) #n=1135
+  
+# Create subgroups
+  dat_nodcis <- dat_all %>% filter(!(bc == 1 & omgedrag == "In situ")) #remove all DCIS from cases, n=1089
+  
+  dat_dcishg <- dat_all %>% filter(!(bc == 1 & omgedrag == "In situ" & diffgrad != 3)) #include high-grade DCIS as cases, n=1109
+    
+  dat_dcisall <- dat_all #include all DCIS as cases, n=1135
+  
+  rm(list=setdiff(ls(), c("dat_nodcis", "dat_dcishg", "dat_dcisall")))
+```
+
+# 1. Data: Only IBC included as cases; DCIS excluded
+## Outcome and follow-up
+```{r 1_outcome}
+dat <- dat_nodcis
+
+# Check outcome distributions
+  table(dat$bc, useNA="always")
+  
+# Type of detection
+  table(dat$scrrel[dat$bc==1], useNA="always")
+  round(prop.table(table(dat$scrrel[dat$bc==1], useNA="always"))*100, 1)
+
+# Follow-up time
+  summary(dat$futime)
+
+# Follow-up time by bc
+  by(dat$futime, dat$bc, summary)
+
+
+# Survival over time
+  obs <- survfit(Surv(futime, bc)~ 1, weights = wt_KM, data=dat) 
+  
+  ## Risk tables
+  tables <- ggsurvtable(obs, data = dat, break.time.by = 1)
+  temp <- tables$risk.table$data
+  risk_table <- round(data.frame(
+    year = temp$time,
+    n_risk = temp$n.risk,
+    n_event = temp$n.event,
+    cum_n_event = temp$cum.n.event,
+    n_censor = temp$n.censor,
+    cum_n_censor = temp$cum.n.censor),0)
+  risk_table
+  
+    rm(temp, tables)
+
+  ## Cumulative incidence (1-KM) plot
+  ggsurvplot(
+    obs, 
+    data = dat, 
+    fun = "event",
+    ylim = c(0, 0.05),
+    conf.int = TRUE,
+    risk.table = TRUE,
+    ggtheme = theme_minimal(),
+    title = "",
+    xlab = "Follow-up time (years)",
+    ylab = "Cumulative incidence",
+    palette = "black",
+    font.main = c(14, "plain", "black"),
+    font.x = c(14, "plain", "black"),
+    font.y = c(14, "plain", "black"),
+    font.tickslab = c(14, "plain", "black"),
+    risk.table.fontsize = 4,
+    break.x.by = 2)
+
+  ## Survival (KM) plot
+  ggsurvplot(
+    obs, 
+    data = dat, 
+    ylim = c(0.95, 1),
+    conf.int = TRUE,
+    risk.table = TRUE,
+    ggtheme = theme_minimal(),
+    title = "",
+    xlab = "Follow-up time (years)",
+    ylab = "Survival probability",
+    palette = "black",
+    font.main = c(14, "plain", "black"),
+    font.x = c(14, "plain", "black"),
+    font.y = c(14, "plain", "black"),
+    font.tickslab = c(14, "plain", "black"),
+    risk.table.fontsize = 4,
+    break.x.by = 2)
+  
+    rm(list=setdiff(ls(), c("dat_nodcis", "dat_dcishg", "dat_dcisall", "dat")))
+```
+
+## Distribution of covariates {.tabset}
+### Personal, hormonal, lifestyle, and disease history
+```{r 1_clinfactors}
+#################### Personal Information ####################
+labels <- list(
+  variables=list(Age = "Age",
+                 ancestry = "Race/ethnicity",
+                 Height_cm = "Height (cm)",
+                 Weight_kg = "Weight (kg)",
+                 BMI = "Body mass index",
+                 bmi_group = "Body mass index (categorized)"),
+  groups=list("","Group"))
+
+strata <- c(list(Total=dat), split(dat, dat$BC_Status))
+
+table1(strata, labels, groupspan=c(1,2),
+       render.continuous=c(.="Mean (SD)", .="Median [Q1, Q3]"),
+       data=dat, topclass="Rtable1-zebra")
+
+####################### Hormonal/Lifestyle factors ####################
+labels <- list(
+  variables=list(Age_Menarche = "Age at menarche",
+                 Parity = "Parity",
+                 age1birth = "Age at first live birth",
+                 Age_Menopause = "Age at menopause",
+                 MHT_use = "Hormone replacement therapy use",
+                 OC_ever_used = "Oral contraceptive use",
+                 gram_alcohol_per_day = "Alcohol intake per day (gram)", #overall
+                 gram_alcohol_per_day2 = "Alcohol intake per day (gram) - excluding non-drinkers"),
+  groups=list("","Group"))
+
+strata <- c(list(Total=dat), split(dat, dat$BC_Status))
+
+table1(strata, labels, groupspan=c(1,2),
+       render.continuous=c(.="Mean (SD)", .="Median [Q1, Q3]"),
+       data=dat, topclass="Rtable1-zebra")
+
+###################### Personal (breast) disease history ####################
+labels <- list(
+  variables=list(N_Biop2 = "Number of previous breast biopsies",
+                 leeft = "Age at breast cancer diagnosis",
+                 oestrogeenstatus = "Estrogen receptor status",
+                 progresteronstatus = "Progesterone receptor status",
+                 herceptinstatus = "HER2 status",
+                 omtopog = "Tumor topography",
+                 omlater = "Laterality",
+                 ommorf = "Morphology",
+                 omgedrag = "Behavior",
+                 omdiffgr = "Grade",
+                 ombasisd = "Basis for diagnosis",
+                 ompalpabel = "Palable",
+                 ombirads = "BI-RADS classification",
+                 ommultifocaal = "Multifocal Tumor"),
+  groups=list("","Group"))
+
+strata <- c(list(Total=dat), split(dat, dat$BC_Status))
+
+table1(strata, labels, groupspan=c(1,2),
+       render.continuous=c(.="Mean (SD)", .="Median [Q1, Q3]"),
+       data=dat, topclass="Rtable1-zebra")
+```
+
+### Family history
+```{r 1_famhist}
+labels <- list(
+  variables=list(family_history_BrCa = "Family history of breast cancer",
+           first_degree_family_history_BrCa = "First degree family history of breast cancer",
+           second_degree_family_history_BrCa = "Second degree family history of breast cancer",
+           BrCA_1stDeg_relative1 = "First degree family member 1 - breast cancer",
+           BrCA_1stDeg_relative2 = "First degree family member 2 - breast cancer",
+           BrCA_1stDeg_relative3 = "First degree family member 3 - breast cancer",
+           BrCA_2ndDeg_relative1 = "Second degree family member 1 - breast cancer",
+           BrCA_2ndDeg_relative2 = "Second degree family member 2 - breast cancer",
+           BrCA_2ndDeg_relative3 = "Second degree family member 3 - breast cancer",
+           Age_Diag_BrCa_1stDeg_rel1 = "Age at diagnosis breast cancer - first degree family member 1",
+           Age_Diag_BrCa_1stDeg_rel2 = "Age at diagnosis breast cancer - first degree family member 2",
+           Age_Diag_BrCa_1stDeg_rel3 = "Age at diagnosis breast cancer - first degree family member 3",
+           Age_Current_BrCa_1stDeg_rel1 = "Current age breast cancer - first degree family member 1",
+           Age_Current_BrCa_1stDeg_rel2 = "Current age breast cancer - first degree family member 2",
+           Age_Current_BrCa_1stDeg_rel3 = "Current age breast cancer - first degree family member 3",
+           Age_Diag_BrCa_2ndDeg_rel1 = "Age at diagnosis breast cancer - second degree family member 1",
+           Age_Diag_BrCa_2ndDeg_rel2 = "Age at diagnosis breast cancer - second degree family member 2",
+           Age_Diag_BrCa_2ndDeg_rel3 = "Age at diagnosis breast cancer - second degree family member 3",
+           Age_Current_BrCa_2ndDeg_rel1 = "Current age breast cancer - second degree family member 1",
+           Age_Current_BrCa_2ndDeg_rel2 = "Current age breast cancer - second degree family member 2",
+           Age_Current_BrCa_2ndDeg_rel3 = "Current age breast cancer - second degree family member 3",
+           
+           family_history_OvCa = "Family history of ovarian cancer",
+           first_degree_family_history_OvCa = "First degree family history of ovarian cancer",
+           second_degree_family_history_OvCa = "Second degree family history of ovarian cancer",
+           OvCa_1stDeg_relative1 = "First degree family member 1 - ovarian cancer",
+           OvCa_1stDeg_relative2 = "First degree family member 2 - ovarian cancer",
+           OvCa_1stDeg_relative3 = "First degree family member 3 - ovarian cancer",
+           OvCa_2ndDeg_relative1 = "Second degree family member 1 - ovarian cancer",
+           OvCa_2ndDeg_relative2 = "Second degree family member 2 - ovarian cancer",
+           OvCa_2ndDeg_relative3 = "Second degree family member 3 - ovarian cancer",
+           Age_Diag_OvCa_1stDeg_rel1 = "Age at diagnosis ovarian cancer - first degree family member 1",
+           Age_Diag_OvCa_1stDeg_rel2 = "Age at diagnosis ovarian cancer - first degree family member 2",
+           Age_Diag_OvCa_1stDeg_rel3 = "Age at diagnosis ovarian cancer - first degree family member 3",
+           Age_Current_OvCa_1stDeg_rel1 = "Current age ovarian cancer - first degree family member 1",
+           Age_Current_OvCa_1stDeg_rel2 = "Current age ovarian cancer - first degree family member 2",
+           Age_Current_OvCa_1stDeg_rel3 = "Current age ovarian cancer - first degree family member 3",
+           Age_Diag_OvCa_2ndDeg_rel1 = "Age at diagnosis ovarian cancer - second degree family member 1",
+           Age_Diag_OvCa_2ndDeg_rel2 = "Age at diagnosis ovarian cancer - second degree family member 2",
+           Age_Diag_OvCa_2ndDeg_rel3 = "Age at diagnosis ovarian cancer - second degree family member 3",
+           Age_Current_OvCa_2ndDeg_rel1 = "Current age ovarian cancer - second degree family member 1",
+           Age_Current_OvCa_2ndDeg_rel2 = "Current age ovarian cancer - second degree family member 2",
+           Age_Current_OvCa_2ndDeg_rel3 = "Current age ovarian cancer - second degree family member 3",
+           
+           family_history_PanCa = "Family history of pancreatic cancer",
+           #no info (not colected in later questionnaire versions): first_degree family_history_PanCa, second_degree_family_history_PanCa
+           PanCa_1stDeg_relative1 = "First degree family member 1 - pancreatic cancer",
+           PanCa_1stDeg_relative2 = "First degree family member 2 - pancreatic cancer",
+           PanCa_1stDeg_relative3 = "First degree family member 3 - pancreatic cancer",
+           PanCa_2ndDeg_relative1 = "Second degree family member 1 - pancreatic cancer",
+           PanCa_2ndDeg_relative2 = "Second degree family member 2 - pancreatic cancer",
+           PanCa_2ndDeg_relative3 = "Second degree family member 3 - pancreatic cancer",
+           Age_Diag_PanCa_1stDeg_rel1 = "Age at diagnosis pancreatic cancer - first degree family member 1",
+           Age_Diag_PanCa_1stDeg_rel2 = "Age at diagnosis pancreatic cancer - first degree family member 2",
+           Age_Diag_PanCa_1stDeg_rel3 = "Age at diagnosis pancreatic cancer - first degree family member 3",
+           Age_Current_PanCa_1stDeg_rel1 = "Current age pancreatic cancer - first degree family member 1",
+           Age_Current_PanCa_1stDeg_rel2 = "Current age pancreatic cancer - first degree family member 2",
+           Age_Current_PanCa_1stDeg_rel3 = "Current age pancreatic cancer - first degree family member 3",
+           Age_Diag_PanCa_2ndDeg_rel1 = "Age at diagnosis pancreatic cancer - second degree family member 1",
+           Age_Diag_PanCa_2ndDeg_rel2 = "Age at diagnosis pancreatic cancer - second degree family member 2",
+           Age_Diag_PanCa_2ndDeg_rel3 = "Age at diagnosis pancreatic cancer - second degree family member 3",
+           Age_Current_PanCa_2ndDeg_rel1 = "Current age pancreatic cancer - second degree family member 1",
+           Age_Current_PanCa_2ndDeg_rel2 = "Current age pancreatic cancer - second degree family member 2",
+           Age_Current_PanCa_2ndDeg_rel3 = "Current age pancreatic cancer - second degree family member 3",
+           
+           family_history_ProsCa = "Family history of prostate cancer",
+           #no info (not colected in later questionnaire versions): first_degree_family_history_ProsCa, second_degree_family_history_ProsCa
+           ProsCa_1stDeg_relative1 = "First degree family member 1 - prostate cancer",
+           ProsCa_1stDeg_relative2 = "First degree family member 2 - prostate cancer",
+           ProsCa_1stDeg_relative3 = "First degree family member 3 - prostate cancer",
+           ProsCa_2ndDeg_relative1 = "Second degree family member 1 - prostate cancer",
+           ProsCa_2ndDeg_relative2 = "Second degree family member 2 - prostate cancer",
+           ProsCa_2ndDeg_relative3 = "Second degree family member 3 - prostate cancer",
+           Age_Diag_ProsCa_1stDeg_rel1 = "Age at diagnosis prostate cancer - first degree family member 1",
+           Age_Diag_ProsCa_1stDeg_rel2 = "Age at diagnosis prostate cancer - first degree family member 2",
+           Age_Diag_ProsCa_1stDeg_rel3 = "Age at diagnosis prostate cancer - first degree family member 3",
+           Age_Current_ProsCa_1stDeg_rel1 = "Current age prostate cancer - first degree family member 1",
+           Age_Current_ProsCa_1stDeg_rel2 = "Current age prostate cancer - first degree family member 2",
+           Age_Current_ProsCa_1stDeg_rel3 = "Current age prostate cancer - first degree family member 3",
+           Age_Diag_ProsCa_2ndDeg_rel1 = "Age at diagnosis prostate cancer - second degree family member 1",
+           Age_Diag_ProsCa_2ndDeg_rel2 = "Age at diagnosis prostate cancer - second degree family member 2",
+           Age_Diag_ProsCa_2ndDeg_rel3 = "Age at diagnosis prostate cancer - second degree family member 3",
+           Age_Current_ProsCa_2ndDeg_rel1 = "Current age prostate cancer - second degree family member 1",
+           Age_Current_ProsCa_2ndDeg_rel2 = "Current age prostate cancer - second degree family member 2",
+           Age_Current_ProsCa_2ndDeg_rel3 = "Current age prostate cancer - second degree family member 3"),
+  groups=list("","Group"))
+
+strata <- c(list(Total=dat), split(dat, dat$BC_Status))
+
+table1(strata, labels, groupspan=c(1,2),
+       render.continuous=c(.="Mean (SD)", .="Median [Q1, Q3]"),
+       data=dat, topclass="Rtable1-zebra")
+```
+
+### Breast density
+```{r 1_density}
+labels <- list(
+  variables=list(VBD = "Volpara volumetric density %",
+                 VDG4thed = "Volpara Density Grade - 4th edition",
+                 VDG5thEd = "Volpara Density Grade - 5th edition"),
+  groups=list("","Group"))
+
+strata <- c(list(Total=dat), split(dat, dat$BC_Status))
+
+table1(strata, labels, groupspan=c(1,2),
+       render.continuous=c(.="Mean (SD)", .="Median [Q1, Q3]"),
+       data=dat, topclass="Rtable1-zebra")
+```
+
+### Genetic data: mutations and PRS
+```{r 1_genetic}
+labels <- list(
+  variables=list(BRCA_mutation_participant = "BRCA mutation - participant",
+           BRCA_mutation_father = "BRCA mutation - father",
+           BRCA_mutation_mother = "BRCA mutation - mother",
+           BRCA_mutation_son = "BRCA mutation - son",
+           BRCA_mutation_daughter = "BRCA mutation - daughter",
+           BRCA_mutation_brother = "BRCA mutation - brother",
+           BRCA_mutation_sister = "BRCA mutation - sister",
+           BRCA_mutation_halfbrother = "BRCA mutation - halfbrother",
+           BRCA_mutation_halfsister = "BRCA mutation - halfsister",
+           BRCA_mutation_grandson = "BRCA mutation - grandson",
+           BRCA_mutation_granddaughter = "BRCA mutation - granddaughter",
+           #no info (not collected in any questionnaire version): third degree family mutation (e.g., maternal/paternal uncle's daughters)
+           
+           prs313 = "Polygenic risk score - 313 SNPs"),
+  groups=list("","Group"))
+
+strata <- c(list(Total=dat), split(dat, dat$BC_Status))
+
+table1(strata, labels, groupspan=c(1,2),
+       render.continuous=c(.="Mean (SD)", .="Median [Q1, Q3]"),
+       data=dat, topclass="Rtable1-zebra")
+```
+
+### Visualize PRS distribution
+```{r 1_prs_raw}
+  ggplot(data=dat, aes(x=prs313, group=BC_Status, fill=BC_Status)) +
+    geom_density(adjust=1, alpha=.4) +
+    scale_fill_manual(values = c("#f3c483", "#5445b1")) +
+    labs(title="PRS score by breast cancer status in complete cases - all 313 SNPs",
+         title.position="center",
+         x="PRS score - all 313 SNPs",
+         y="Density") +
+    theme_classic()
+```
+
+## BOADICEA scores distribution
+```{r 1_boadicea}
+labels <- list(
+  variables=list(BOA_5yrsrisk_Model1 = "Predicted 5 year risk - Model 1",
+                 BOA_5yrsrisk_Model2 = "Predicted 5 year risk - Model 2",
+                 BOA_5yrsrisk_Model3a = "Predicted 5 year risk - Model 3a",
+                 BOA_5yrsrisk_Model3b = "Predicted 5 year risk - Model 3b",
+                 BOA_5yrsrisk_Model4 = "Predicted 5 year risk - Model 4",
+                 BOA_5yrsrisk_Model5a = "Predicted 5 year risk - Model 5a",
+                 BOA_5yrsrisk_Model5b = "Predicted 5 year risk - Model 5b"),
+  groups=list("","Group"))
+
+strata <- c(list(Total=dat), split(dat, dat$BC_Status))
+
+table1(strata, labels, groupspan=c(1,2),
+       render.continuous=c(.="Mean (SD)", .="Median [Q1, Q3]"),
+       data=dat, topclass="Rtable1-zebra")
+```
+
+# 2-3. Data: Sensitivity analysis included DCIS
+```{r 2_outcome, eval=FALSE}
+# Repeat but change data
+dat <- dat_dcishg
+dat <- dat_dcisall
+```
